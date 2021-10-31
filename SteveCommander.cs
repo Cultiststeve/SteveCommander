@@ -5,11 +5,27 @@ using System.Collections.Generic;
 
 public class SteveCommander : IHoldfastSharedMethods, IHoldfastSharedMethods2
 {
+    const int botsPerPlayer = 10;
     // This is what we use for sending commands to server|
     private InputField f1MenuInputField;    
 
     // Store if our players are bots or not
     private readonly Dictionary<int, bool> playerIsBotDictionary = new Dictionary<int, bool>();
+
+    private class BotCommand
+    {
+        public int parentPlayerId = -1;
+        public float desired_facing = 0;
+        public bool moving = false;
+    }
+    private Dictionary<int, BotCommand> botDict = new Dictionary<int, BotCommand>();
+
+    private class PlayerRequiringBots
+    {
+        public int playerId = -1;
+        public int requiredBots = -1;
+    }
+    private List<PlayerRequiringBots> playerRequiringBotsList = new List<PlayerRequiringBots>();
 
     public void OnPlayerSpawned(int playerId, int spawnSectionId, FactionCountry playerFaction, PlayerClass playerClass, int uniformId, GameObject playerObject)
     {
@@ -19,24 +35,58 @@ public class SteveCommander : IHoldfastSharedMethods, IHoldfastSharedMethods2
             if (playerIsBotDictionary.TryGetValue(playerId, out isBot) && isBot)
             {
                 Debug.LogFormat("You are a bot: {0}", playerId);
+                // Assign to player + start moving
+                BotCommand thisBotCommand = new BotCommand();
+
+                // First player in list requiring bots
+                Debug.LogFormat("Assigning bot to player");
+                Debug.LogFormat("players requing bot len: {0}", playerRequiringBotsList.Count);
+                PlayerRequiringBots chosenPlayer = playerRequiringBotsList[0];
+                //TODO: check player on same faction
+                thisBotCommand.parentPlayerId = chosenPlayer.playerId;
+                Debug.LogFormat("Giving this bot to playerId {0}", thisBotCommand.parentPlayerId);
+                botDict.Add(playerId, thisBotCommand);  // Add this bot to dict with its playerId as key
+                playerRequiringBotsList[0].requiredBots -= 1;
+                if(playerRequiringBotsList[0].requiredBots <= 0)
+                {
+                    playerRequiringBotsList.RemoveAt(0);  // If they dont need any bots, remove from this dict
+                }
+
+                // Set bot initial orders
+                Debug.LogFormat("Setting Bot's initial orders");
+                thisBotCommand.moving = true;
+                var rcCommand = string.Format("rc carbonPlayers setRunning true {0}", playerId);
+                f1MenuInputField.onEndEdit.Invoke(rcCommand);  
+
+                thisBotCommand.desired_facing = 0;
+                rcCommand = string.Format("rc carbonPlayers inputRotation {0} {1}", thisBotCommand.desired_facing, playerId);
+                f1MenuInputField.onEndEdit.Invoke(rcCommand);  
             }
-            else
+            else  // Real player
             {
                 Debug.Log(string.Format("You are NOT a bot: {0}", playerId));
-                Debug.Log("Attemmpting to spawn a bot...");
-                for(int i = 0; i<= 10; i++)
+                Debug.LogFormat("Attemmpting to spawn {0} bots...", botsPerPlayer);
+                for(int i = 0; i<= botsPerPlayer-1; i++)
                 {
+                    // Spawn Bot
                     string botName = string.Format("yourbotname{0}", i);
-                    var rcCommand = string.Format("rc carbonPlayers spawnSpecific {0} {1} {2}", playerFaction, playerClass, botName);
-                    // Debug.LogFormat("Command to send is {0}", rcCommand);
+                    var rcCommand = string.Format("rc carbonPlayers spawnSpecific {0} {1} {2} {3} {4}", playerFaction, playerClass, botName, "51st", 0);
                     f1MenuInputField.onEndEdit.Invoke(rcCommand);  
                 }
+                PlayerRequiringBots newPlayer = new PlayerRequiringBots();
+                newPlayer.playerId = playerId;
+                newPlayer.requiredBots = botsPerPlayer;
+                playerRequiringBotsList.Add(newPlayer);
+                Debug.LogFormat("Added this players bot requirements to the list");
+                Debug.LogFormat("players requing bot len: {0}", playerRequiringBotsList.Count);
+                
+                f1MenuInputField.onEndEdit.Invoke("rc carbonPlayers ignoreAutoControls true");
 
             }
         } 
         catch (System.Exception e)
         {
-            Debug.LogWarning(e);
+            Debug.LogWarning(e.ToString());
         }
      
     }
@@ -104,7 +154,6 @@ public class SteveCommander : IHoldfastSharedMethods, IHoldfastSharedMethods2
             }
         }
         f1MenuInputField.onEndEdit.Invoke("rc login Sausage1");
-        Debug.Log("setting carbonPlayers ignoreAutoControls true");
         f1MenuInputField.onEndEdit.Invoke("rc carbonPlayers ignoreAutoControls true");
 
     }
@@ -145,8 +194,6 @@ public class SteveCommander : IHoldfastSharedMethods, IHoldfastSharedMethods2
         Debug.LogFormat("OnPlayerLeft {0}", playerId);
     }
 
-
-
     public void OnScorableAction(int playerId, int score, ScorableActionType reason)
     {
         Debug.LogFormat("OnScorableAction {0} {1} {2}", playerId, score, reason.ToString());
@@ -175,7 +222,7 @@ public class SteveCommander : IHoldfastSharedMethods, IHoldfastSharedMethods2
 
     public void OnPlayerWeaponSwitch(int playerId, string weapon)
     {
-        Debug.LogFormat("OnPlayerWeaponSwitch {0} {1}", playerId, weapon);
+        // Debug.LogFormat("OnPlayerWeaponSwitch {0} {1}", playerId, weapon);
     }
 
     public void OnCapturePointCaptured(int capturePoint)
